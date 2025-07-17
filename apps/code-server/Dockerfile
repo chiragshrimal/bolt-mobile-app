@@ -1,9 +1,9 @@
 # this is base image 
 FROM codercom/code-server:4.96.4
 
-# so that i can add new files 
+# so that i can add new files ~
 USER root
-
+  
 RUN apt-get update \
     && apt-get install -y curl \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \

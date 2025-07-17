@@ -1,24 +1,28 @@
+// worker.ts
 import cors from "cors";
 import express from "express";
 import { prismaClient } from "db/client";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { systemPrompt } from "./systemPrompt";
 import { ArtifactProcessor } from "./parser";
-import { onFileUpdate, onPromptEnd, onShellCommand } from "./os";
-import { RelayWebsocket } from "./ws";
+import { onFileUpdate, onShellCommand} from "./os";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "<YOUR_GEMINI_API_KEY>");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GEMINI_MODEL = "gemini-1.5-flash-latest";
 
 app.post("/prompt", async (req, res) => {
   const { prompt, projectId } = req.body;
+
+  console.log(prompt);
+
   const project = await prismaClient.project.findUnique({
-    where: {
-      id: projectId,
-    },
+    where: { id: projectId },
   });
 
   if (!project) {
@@ -34,86 +38,96 @@ app.post("/prompt", async (req, res) => {
     },
   });
 
-  const { diff } = await RelayWebsocket.getInstance().sendAndAwaitResponse({
-    event: "admin",
-    data: {
-      type: "prompt-start",
-    }
-  }, promptDb.id);
+  console.log("hii");
+  const allPrompts = await prismaClient.prompt.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+  });
+  console.log(allPrompts);
+  console.log("helllo");
 
-  if (diff) {
-    await prismaClient.prompt.create({
-      data: {
-        content: `<bolt-user-diff>${diff}</bolt-user-diff>\n\n$`,
-        projectId,
-        type: "USER",
+  const geminiMessages = [
+    {
+      role: "user",
+      parts: [
+        {
+          text:
+            systemPrompt(project.type) +
+            "\n\n" +
+            allPrompts.map((p) => p.content).join("\n"),
+        },
+      ],
+    },
+  ];
+
+  console.log(geminiMessages);
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    });
+      body: JSON.stringify({
+        contents: geminiMessages,
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 20000,
+        },
+      }),
+    }
+  );
+
+  const data = await response.json();
+  console.log(data);
+
+  if (!data.candidates || !data.candidates[0]) {
+    res.status(500).json({ error: "No response from Gemini" });
+    return;
   }
 
-  const allPrompts = await prismaClient.prompt.findMany({
-    where: {
+  const output = data.candidates[0].content.parts
+    .map((p: any) => p.text)
+    .join("");
+
+  let artifact = "";
+
+  const artifactProcessor = new ArtifactProcessor(
+  "",
+  async (filePath, fileContent) => {
+    await onFileUpdate(filePath, fileContent);
+  },
+  async (shellCommand) => {
+    await onShellCommand(shellCommand); // <-- critical fix
+  }
+);
+
+  console.log(output);
+  artifactProcessor.append(output);
+  artifactProcessor.parse();
+  artifact += output;
+  // console.log(artifact);
+
+  await prismaClient.prompt.create({
+    data: {
+      content: artifact,
       projectId,
-    },
-    orderBy: {
-      createdAt: "asc",
+      type: "SYSTEM",
     },
   });
 
-  let artifactProcessor = new ArtifactProcessor(
-    "",
-    (filePath, fileContent) =>
-      onFileUpdate(filePath, fileContent, projectId, promptDb.id, project.type),
-    (shellCommand) =>
-      onShellCommand(shellCommand, projectId, promptDb.id)
-  );
-  let artifact = "";
+  await prismaClient.action.create({
+    data: {
+      content: "Done!",
+      projectId,
+      promptId: promptDb.id,
+    },
+  });
 
-  try {
-    const chat = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+  // onPromptEnd(promptDb.id);
 
-    // Build Gemini style "contents"
-    const contents = [
-      { role: "user", parts: [{ text: systemPrompt(project.type) }] },
-      ...allPrompts.map((p: any) => ({
-        role: p.type === "USER" ? "user" : "model",
-        parts: [{ text: p.content }],
-      })),
-    ];
-
-    // Emulate .on('text') by streaming chunks
-    const stream = await chat.generateContentStream({ contents });
-
-    for await (const chunk of stream.stream) {
-      const text = chunk.text();
-      artifactProcessor.append(text);
-      artifactProcessor.parse();
-      artifact += text;
-    }
-
-    console.log("done!");
-    await prismaClient.prompt.create({
-      data: {
-        content: artifact,
-        projectId,
-        type: "SYSTEM",
-      },
-    });
-
-    await prismaClient.action.create({
-      data: {
-        content: "Done!",
-        projectId,
-        promptId: promptDb.id,
-      },
-    });
-    onPromptEnd(promptDb.id);
-
-    res.json({ response: artifact });
-  } catch (error) {
-    console.log("error", error);
-    res.status(500).json({ error: "LLM error", details: error });
-  }
+  res.json({ output: artifact });
 });
 
 app.listen(9091, () => {
