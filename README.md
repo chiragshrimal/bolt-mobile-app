@@ -37,3 +37,16 @@ below command run in the apps
 
 
 ### Make the frontend  in nextjs 
+
+
+
+### make the worker server
+
+```
+
+because root folder m node modules hai then dont install dependencies 
+
+```
+
+1. bun init 
+2. bunx tsc --init
