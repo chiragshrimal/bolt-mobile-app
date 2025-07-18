@@ -24,7 +24,6 @@ const CODE_FORMATTING_INFO = `
 </code_formatting_info>
 `
 
-//  artifact means structure  of the code files 
 const ARTIFACT_INFO = `
 
 <artifact_info>

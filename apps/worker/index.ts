@@ -38,6 +38,8 @@ app.post("/prompt", async (req, res) => {
     },
   });
 
+  project.type="REACT_NATIVE";
+
   console.log("hii");
   const allPrompts = await prismaClient.prompt.findMany({
     where: { projectId },
