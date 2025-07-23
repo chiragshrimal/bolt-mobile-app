@@ -1,4 +1,3 @@
-
 export function TemplateButtons({
 	onTemplateClick,
 }: { onTemplateClick: (text: string) => void }) {

@@ -27,7 +27,7 @@ model Project {
   updatedAt   DateTime @updatedAt
   prompt      Prompt[]
   actions     Action[]
-  type        ProjectType @default(NEXTJS)
+  type        ProjectType @default(REACT_NATIVE)
   userId      String
 }
 
