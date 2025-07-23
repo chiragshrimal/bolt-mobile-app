@@ -1,37 +1,21 @@
-const BASE_WORKER_DIR = process.env.BASE_WORKER_DIR || "C:/Users/Chirag/tmp/bolty-worker";
+const BASE_WORKER_DIR=process.env.BASE_WORKER_DIR || "C:/Users/Chirag/tmp/bolty-worker";
 
-
-// Ensure the directory exists
-// await Bun.mkdir(BASE_WORKER_DIR, { recursive: true });
-
-export async function onFileUpdate(filePath: string, fileContent: string) {
-  const fullPath = `${BASE_WORKER_DIR}/${filePath}`;
-  console.log(`[onFileUpdate] Writing file: ${fullPath}`);
-  await Bun.write(fullPath, fileContent);
+if(!Bun.file(BASE_WORKER_DIR).exists()){
+    Bun.write(BASE_WORKER_DIR,"");
 }
-export async function onShellCommand(shellCommand: string) {
-  console.log("[onShellCommand] Executing shell command");
 
-  const commands = shellCommand.split("&&");
+export async function onFileUpdate(filePath: string , fileContent: string){
+    console.log(`File updated: ${filePath}`);
+    await Bun.write(`${BASE_WORKER_DIR}/${filePath}`,fileContent);
+}
 
-  for (const command of commands) {
-    const trimmed = command.trim();
-    console.log(`[onShellCommand] Running command: ${trimmed}`);
+export function onShellCommand(shellCommand: string){
 
-    const isWindows = process.platform === "win32";
-    const cmdArgs = isWindows
-      ? ["cmd.exe", "/c", trimmed]
-      : ["sh", "-c", trimmed];
-
-    const result = Bun.spawnSync({
-      cmd: cmdArgs,
-      cwd: BASE_WORKER_DIR,
-    });
-
-    const stdout = await new Response(result.stdout).text();
-    const stderr = await new Response(result.stderr).text();
-
-    console.log("[stdout]:", stdout);
-    if (stderr.trim()) console.error("[stderr]:", stderr);
-  }
+    const commands =shellCommand.split("&&");
+    for(const command of commands){
+        console.log(`Running command: ${command}`);
+        const result = Bun.spawnSync({cmd: command.split(" "), cwd: BASE_WORKER_DIR});
+        console.log(result.stdout);
+        console.log(result.stderr.toString());
+    }
 }

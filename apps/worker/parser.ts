@@ -9,9 +9,7 @@
     </boltArtifact>
 */
 
-// we have mede the class of ArtifactProcessor 
 export class ArtifactProcessor {
-    // this take current  string 
     public currentArtifact: string;
     private onFileContent: (filePath: string, fileContent: string) => void;
     private onShellCommand: (shellCommand: string) => void;
@@ -25,7 +23,8 @@ export class ArtifactProcessor {
     append(artifact: string) {
         this.currentArtifact += artifact;
     }
-   parse() {
+
+    parse() {
        const latestActionStart = this.currentArtifact.split("\n").findIndex((line) => line.includes("<boltAction type="));
        const latestActionEnd = this.currentArtifact.split("\n").findIndex((line) => line.includes("</boltAction>")) ?? (this.currentArtifact.split("\n").length - 1);
 
@@ -55,5 +54,4 @@ export class ArtifactProcessor {
        }
     } catch(e) {}
     }
-
 }

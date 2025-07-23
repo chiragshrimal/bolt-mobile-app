@@ -1,28 +1,23 @@
-// worker.ts
 import cors from "cors";
 import express from "express";
 import { prismaClient } from "db/client";
+import Anthropic from '@anthropic-ai/sdk';
 import { systemPrompt } from "./systemPrompt";
 import { ArtifactProcessor } from "./parser";
-import { onFileUpdate, onShellCommand} from "./os";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { onFileUpdate,onShellCommand } from "./os";
+// import { RelayWebsocket } from "./ws";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const GEMINI_MODEL = "gemini-1.5-flash-latest";
-
 app.post("/prompt", async (req, res) => {
   const { prompt, projectId } = req.body;
-
-  console.log(prompt);
-
+  const client = new Anthropic();
   const project = await prismaClient.project.findUnique({
-    where: { id: projectId },
+    where: {
+      id: projectId,
+    },
   });
 
   if (!project) {
@@ -38,98 +33,76 @@ app.post("/prompt", async (req, res) => {
     },
   });
 
+  // const { diff } = await RelayWebsocket.getInstance().sendAndAwaitResponse({
+  //   event: "admin",
+  //   data: {
+  //     type: "prompt-start",
+  //   }
+  // }, promptDb.id);
+
+  // if (diff) {
+  //   await prismaClient.prompt.create({
+  //     data: {
+  //       content: `<bolt-user-diff>${diff}</bolt-user-diff>\n\n$`,
+  //       projectId,
+  //       type: "USER",
+  //     },
+  //   });
+  // }
+
+  const allPrompts = await prismaClient.prompt.findMany({
+    where: {
+      projectId,
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+
   project.type="REACT_NATIVE";
 
-  console.log("hii");
-  const allPrompts = await prismaClient.prompt.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "asc" },
-  });
-  console.log(allPrompts);
-  console.log("helllo");
-
-  const geminiMessages = [
-    {
-      role: "user",
-      parts: [
-        {
-          text:
-            systemPrompt(project.type) +
-            "\n\n" +
-            allPrompts.map((p) => p.content).join("\n"),
-        },
-      ],
-    },
-  ];
-
-  console.log(geminiMessages);
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: geminiMessages,
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 20000,
-        },
-      }),
-    }
-  );
-
-  const data = await response.json();
-  console.log(data);
-
-  if (!data.candidates || !data.candidates[0]) {
-    res.status(500).json({ error: "No response from Gemini" });
-    return;
-  }
-
-  const output = data.candidates[0].content.parts
-    .map((p: any) => p.text)
-    .join("");
-
+  let artifactProcessor = new ArtifactProcessor("",onFileUpdate, onShellCommand);
   let artifact = "";
 
-  const artifactProcessor = new ArtifactProcessor(
-  "",
-  async (filePath, fileContent) => {
-    await onFileUpdate(filePath, fileContent);
-  },
-  async (shellCommand) => {
-    await onShellCommand(shellCommand); // <-- critical fix
-  }
-);
+  let response = client.messages.stream({
+    messages: allPrompts.map((p: any) => ({
+      role: p.type === "USER" ? "user" : "assistant",
+      content: p.content,
+    })),
+    system: systemPrompt,
+    model: "claude-3-7-sonnet-20250219",
+    max_tokens: 8000,
+  }).on('text', (text) => {
+    artifactProcessor.append(text);
+    // this below function hi command ko run krta hai and files wgr 
+    // correct files m dalta hai
+    artifactProcessor.parse();
+    artifact += text;
+  })
+  .on('finalMessage', async (message) => {
+    console.log("done!");
+    await prismaClient.prompt.create({
+      data: {
+        content: artifact,
+        projectId,
+        type: "SYSTEM",
+      },
+    });
 
-  console.log(output);
-  artifactProcessor.append(output);
-  artifactProcessor.parse();
-  artifact += output;
-  // console.log(artifact);
-
-  await prismaClient.prompt.create({
-    data: {
-      content: artifact,
-      projectId,
-      type: "SYSTEM",
-    },
+    // await prismaClient.action.create({
+    //   data: {
+    //     content: "Done!",
+    //     projectId,
+    //     promptId: promptDb.id,
+    //   },
+    // });
+    // onPromptEnd(promptDb.id);
+  })
+  .on('error', (error) => {
+    console.log("error", error);
   });
 
-  await prismaClient.action.create({
-    data: {
-      content: "Done!",
-      projectId,
-      promptId: promptDb.id,
-    },
-  });
-
-  // onPromptEnd(promptDb.id);
-
-  res.json({ output: artifact });
+  res.json({ response });
 });
 
 app.listen(9091, () => {
