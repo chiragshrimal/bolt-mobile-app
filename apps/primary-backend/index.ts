@@ -8,7 +8,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-app.post("/project", async (req, res) => {
+app.post("/project",authMiddleware, async (req, res) => {
   const { prompt } = req.body;
   const userId = req.userId!;
   //TODO: add logic to get a useful name for the project from the prompt
@@ -19,7 +19,7 @@ app.post("/project", async (req, res) => {
   res.json({ projectId: project.id });
 });
 
-app.get("/projects", async (req, res) => {
+app.get("/projects",authMiddleware,async (req, res) => {
   const userId = req.userId!;
   const projects = await prismaClient.project.findMany({
     where: { userId },

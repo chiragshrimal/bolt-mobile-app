@@ -23,7 +23,7 @@ export function Prompt() {
   const handleGenerate = async () => {
     try {
       const token = await getToken();
-      console.log("Auth token:", token);
+      // console.log("Auth token:", token);
 
       if (!token) {
         toast.error("You need to be signed in to generate a project");
