@@ -50,3 +50,14 @@ because root folder m node modules hai then dont install dependencies
 
 1. bun init 
 2. bunx tsc --init
+
+
+
+
+
+
+
+###  Adding devops part 
+
+1. first we have to build the router service which talk to  AWS so that whenever new person come assign them new machine  
+2. 

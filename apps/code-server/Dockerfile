@@ -16,4 +16,5 @@ USER coder
 # Expose code-server's default port
 EXPOSE 8080
 
+
 CMD [ "code-server", "--auth", "none","--bind-addr" , "0.0.0.0:8080","/tmp/bolty-worker" ]
